@@ -1,0 +1,38 @@
+{
+  "blacklisted_users": {
+    "description": "弱黑名单用户列表",
+    "type": "list",
+    "default": [],
+    "hint": "弱黑名单用户ID列表。列表中的用户无论私聊还是群聊都会触发衰减拦截。"
+  },
+  "blacklisted_groups": {
+    "description": "弱黑名单群聊列表",
+    "type": "list",
+    "default": [],
+    "hint": "弱黑名单群号列表。列表中的群内所有成员都会触发衰减拦截。与用户列表独立，命中任一即生效。"
+  },
+  "base_probability": {
+    "description": "初始回复概率",
+    "type": "float",
+    "default": 0.9,
+    "hint": "首次回复的概率 (0.0~1.0)。例如 0.9 表示 90% 概率回复。"
+  },
+  "decay_rate": {
+    "description": "衰减率",
+    "type": "float",
+    "default": 0.55,
+    "hint": "每多回复一轮，概率乘以此值。0.55 表示每轮概率降至 55%。越小衰减越快。"
+  },
+  "cooldown": {
+    "description": "拦截冷却时间",
+    "type": "string",
+    "default": "10m",
+    "hint": "被拦截后的冷却时间，期间所有消息直接拦截。格式如 1h30m、5m30s、90s。设为0则禁用冷却。"
+  },
+  "log_blocked_messages": {
+    "description": "记录拦截日志",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后会在日志中记录拦截和放行信息。"
+  }
+}

@@ -1,0 +1,6 @@
+name: "弱黑名单"
+display_name: "弱黑名单（衰减版）"
+author: "wolfycz"
+version: "v1.0.0"
+description: "对弱黑名单用户/群进行概率回复，连续回复次数越多概率越低，在LLM调用前拦截节省Token。"
+repo: ""
