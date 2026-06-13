@@ -1,5 +1,16 @@
 # 更新日志
 
+## 1.1.0
+> 2026-06-14
+
+- 统一所有日志前缀为 `[WeakBlacklist]`
+- 新增 `log_config` 配置组（替换原 `log_blocked_messages`）：
+  - `log_with_bot_id`：日志前缀附加机器人实例 ID
+  - `debug_to_info`：debug 日志（放行/冷却/计数）提级为 info 输出
+- 拦截事件始终以 info 级别输出，不再受日志开关控制
+
+---
+
 ## 1.0.0
 > 2026-05-25
 

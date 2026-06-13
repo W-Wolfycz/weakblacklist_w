@@ -29,10 +29,23 @@
     "default": "10m",
     "hint": "被拦截后的冷却时间，期间所有消息直接拦截。格式如 1h30m、5m30s、90s。设为0则禁用冷却。"
   },
-  "log_blocked_messages": {
-    "description": "记录拦截日志",
-    "type": "bool",
-    "default": true,
-    "hint": "开启后会在日志中记录拦截和放行信息。"
+  "log_config": {
+    "description": "日志设置",
+    "type": "object",
+    "hint": "控制日志前缀格式与输出级别。拦截事件始终以 info 级别输出；放行/冷却/计数为 debug 级别，可由「调试日志提级」提至 info。",
+    "items": {
+      "log_with_bot_id": {
+        "description": "日志附加机器人ID",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后日志前缀附加当前机器人实例 ID，便于多 Bot 环境区分。"
+      },
+      "debug_to_info": {
+        "description": "调试日志提级",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后 debug 日志（放行/冷却/计数）以 info 级别输出，插件热重载即可生效。"
+      }
+    }
   }
 }

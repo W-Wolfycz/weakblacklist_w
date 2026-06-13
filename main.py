@@ -19,7 +19,10 @@ class WeakBlacklistPlugin(Star):
         self.base_probability = float(config.get("base_probability", 0.9))
         self.decay_rate = float(config.get("decay_rate", 0.55))
         self.cooldown = self._parse_duration(config.get("cooldown", "10m"))
-        self.log_enabled = bool(config.get("log_blocked_messages", True))
+
+        log_conf = config.get("log_config", {})
+        self.log_with_bot_id = log_conf.get("log_with_bot_id", False)
+        self.debug_to_info = log_conf.get("debug_to_info", False)
 
         # 计数器: {bot_id: {target_id: {"count": int, "block_time": float}}}
         self._counters: Dict[str, Dict[str, Dict]] = {}
@@ -33,8 +36,24 @@ class WeakBlacklistPlugin(Star):
         users = set(str(uid) for uid in config.get("blacklisted_users", []))
         groups = set(str(gid) for gid in config.get("blacklisted_groups", []))
         logger.info(
-            f"弱黑名单（衰减版）已加载，用户: {len(users)} 个，群: {len(groups)} 个"
+            f"[WeakBlacklist] 已加载，用户: {len(users)} 个，群: {len(groups)} 个"
         )
+
+    # ===================== 日志 =====================
+
+    def _tag(self, event=None) -> str:
+        if self.log_with_bot_id and event is not None:
+            try:
+                return f"[WeakBlacklist:{event.get_platform_id()}]"
+            except Exception:
+                pass
+        return "[WeakBlacklist]"
+
+    def _log_debug(self, event: AstrMessageEvent, msg: str):
+        if self.debug_to_info:
+            logger.info(f"{self._tag(event)} {msg}")
+        else:
+            logger.debug(f"{self._tag(event)} {msg}")
 
     @staticmethod
     def _parse_duration(s: str) -> int:
@@ -64,7 +83,7 @@ class WeakBlacklistPlugin(Star):
                 with open(self._counters_path, "r", encoding="utf-8") as f:
                     self._counters = json.load(f)
         except Exception as e:
-            logger.error(f"加载计数器失败: {e}")
+            logger.error(f"[WeakBlacklist] 加载计数器失败: {e}")
             self._counters = {}
 
     def _save_counters(self):
@@ -72,7 +91,7 @@ class WeakBlacklistPlugin(Star):
             with open(self._counters_path, "w", encoding="utf-8") as f:
                 json.dump(self._counters, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger.error(f"保存计数器失败: {e}")
+            logger.error(f"[WeakBlacklist] 保存计数器失败: {e}")
 
     # ===================== 计数器操作 =====================
 
@@ -118,6 +137,7 @@ class WeakBlacklistPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.ALL, priority=5)
     async def check_weak_blacklist(self, event: AstrMessageEvent):
+        """唤醒/@ 阶段判定：黑名单用户/群按指数衰减概率决定是否放行，未放行则 stop_event 阻断 LLM 调用。"""
         if not getattr(event, 'is_at_or_wake_command', False):
             return
 
@@ -132,12 +152,8 @@ class WeakBlacklistPlugin(Star):
         # 冷却期内直接拦截
         if self.cooldown > 0 and block_time > 0 and (now - block_time) < self.cooldown:
             event.stop_event()
-            if self.log_enabled:
-                remaining = int(self.cooldown - (now - block_time))
-                logger.debug(
-                    f"[Bot:{bot_id}] 弱黑名单冷却中 {bl_type}:{target_id} "
-                    f"剩余 {remaining}s"
-                )
+            remaining = int(self.cooldown - (now - block_time))
+            self._log_debug(event, f"冷却中 {bl_type}:{target_id} 剩余 {remaining}s")
             return
 
         # 冷却结束，计数器归零
@@ -153,27 +169,25 @@ class WeakBlacklistPlugin(Star):
             event.set_extra("wb_bot_id", bot_id)
             event.set_extra("wb_target_id", target_id)
             event.set_extra("wb_count", count)
-            if self.log_enabled:
-                logger.debug(
-                    f"[Bot:{bot_id}] 弱黑名单放行 {bl_type}:{target_id} "
-                    f"count={count} P={prob:.3f} roll={roll:.3f}"
-                )
+            self._log_debug(
+                event,
+                f"放行 {bl_type}:{target_id} count={count} P={prob:.3f} roll={roll:.3f}"
+            )
         else:
             # 拦截，记录 block_time 进入冷却
             self._set_counter(bot_id, target_id, 0, block_time=now)
             event.stop_event()
-            if self.log_enabled:
-                msg_preview = event.message_str[:50]
-                if len(event.message_str) > 50:
-                    msg_preview += "..."
-                logger.info(
-                    f"[Bot:{bot_id}] 弱黑名单拦截 {bl_type}:{target_id} "
-                    f"count={count} P={prob:.3f} roll={roll:.3f} "
-                    f"消息:{msg_preview}"
-                )
+            msg_preview = event.message_str[:50]
+            if len(event.message_str) > 50:
+                msg_preview += "..."
+            logger.info(
+                f"{self._tag(event)} 拦截 {bl_type}:{target_id} "
+                f"count={count} P={prob:.3f} roll={roll:.3f} 消息:{msg_preview}"
+            )
 
     @filter.on_decorating_result(priority=10)
     async def track_reply(self, event: AstrMessageEvent):
+        """BOT 成功回复后递增计数器（连续回复越多，下次放行概率越低）。"""
         if not event.get_extra("wb_track"):
             return
 
@@ -192,12 +206,7 @@ class WeakBlacklistPlugin(Star):
         old_count = event.get_extra("wb_count") or 0
 
         self._set_counter(bot_id, target_id, old_count + 1)
-
-        if self.log_enabled:
-            logger.debug(
-                f"[Bot:{bot_id}] 弱黑名单计数 {target_id} "
-                f"{old_count}->{old_count + 1}"
-            )
+        self._log_debug(event, f"计数 {target_id} {old_count}->{old_count + 1}")
 
         event.set_extra("wb_track", False)
         event.set_extra("wb_bot_id", None)
@@ -206,4 +215,4 @@ class WeakBlacklistPlugin(Star):
 
     async def terminate(self):
         self._save_counters()
-        logger.info("弱黑名单（衰减版）已停用，计数器已保存。")
+        logger.info("[WeakBlacklist] 已停用，计数器已保存")
